@@ -1,3 +1,0 @@
-/home/lighthouse/code/cmakeTutorial/build/CMakeFiles/hello.dir
-/home/lighthouse/code/cmakeTutorial/build/CMakeFiles/edit_cache.dir
-/home/lighthouse/code/cmakeTutorial/build/CMakeFiles/rebuild_cache.dir

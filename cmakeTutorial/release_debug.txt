@@ -1,0 +1,20 @@
+
+# 设置release和debug模式
+if($(CMAKE_BUILD_TYPE) STREQUAL "Release")
+    message(STATUS "Release mode")
+    set(BuildType "Release")
+else()
+    message(STATUS "Debug mode")
+    set(BuildType "Debug")
+endif()
+
+
+# 设置lib库
+# RELEASE_DIR为自定义变量
+SET(RELEASE_DIR ${PROJECT_SOURCE_DIR}/release)
+# debug与release目录不一致
+
+# make时，库文件输出到 LIBRARY_OUTPUT_PATH 指定的位置
+# LIBRARY_OUTPUT_PATH为系统变量
+SET(LIBRARY_OUTPUT_PATH ${RELEASE_DIR}/${BuildType})
+
