@@ -80,7 +80,12 @@ int http_request(connection_t *conn) { //
 	return 0;
 }
 
-// nginx
+/*
+这是一个基于 epoll 的 HTTP 服务器的响应生成函数，
+它只是一个生成 HTTP 响应的函数，作为整个 WebServer 的一部分，
+用于处理客户端请求并返回相应的 HTML 内容。
+
+*/
 int http_response(connection_t *conn) {
 #if 1
 	conn->wlen = sprintf(conn->wbuffer, 

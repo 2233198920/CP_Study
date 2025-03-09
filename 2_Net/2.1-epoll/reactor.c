@@ -1,55 +1,55 @@
+#include <sys/socket.h>     // socket相关API
+#include <errno.h>          // 错误码定义
+#include <netinet/in.h>     // 网络地址结构体
+
+#include <stdio.h>          // 标准输入输出
+#include <string.h>         // 字符串处理函数
+#include <unistd.h>         // UNIX标准函数
+
+#include <pthread.h>        // 线程相关函数
+#include <sys/poll.h>       // poll多路复用
+#include <sys/epoll.h>      // epoll多路复用
+#include <sys/time.h>       // 时间相关函数
 
 
+#define BUFFER_LENGTH		512    // 缓冲区大小定义
 
-#include <sys/socket.h>
-#include <errno.h>
-#include <netinet/in.h>
-
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-
-#include <pthread.h>
-#include <sys/poll.h>
-#include <sys/epoll.h>
-#include <sys/time.h>
-
-
-#define BUFFER_LENGTH		512
-
+// 回调函数类型定义：返回值为int，参数为文件描述符
 typedef int (*RCALLBACK)(int fd);
 
-// listenfd
-// EPOLLIN --> 
+// 回调函数前置声明
+// 处理新的客户端连接请求
 int accept_cb(int fd);
-// clientfd
-// 
+// 处理客户端数据接收
 int recv_cb(int fd);
+// 处理数据发送
 int send_cb(int fd);
 
-// conn, fd, buffer, callback
+// 连接项结构体：保存每个连接的状态和数据
 struct conn_item {
-	int fd;
+	int fd;                             // 文件描述符
 	
-	char rbuffer[BUFFER_LENGTH];
-	int rlen;
-	char wbuffer[BUFFER_LENGTH];
-	int wlen;
+	char rbuffer[BUFFER_LENGTH];        // 接收缓冲区
+	int rlen;                           // 接收数据长度
+	char wbuffer[BUFFER_LENGTH];        // 发送缓冲区
+	int wlen;                           // 发送数据长度
 
+	// 使用联合体节省内存，因为一个连接不会同时需要accept_callback和recv_callback
 	union {
-		RCALLBACK accept_callback;
-		RCALLBACK recv_callback;
+		RCALLBACK accept_callback;      // accept事件回调
+		RCALLBACK recv_callback;        // 接收数据回调
 	} recv_t;
-	RCALLBACK send_callback;
+	RCALLBACK send_callback;            // 发送数据回调
 };
-// libevent --> 
+// 注：这里的结构类似于libevent库的实现方式
 
+// 全局变量
+int epfd = 0;                                      // epoll实例描述符
+struct conn_item connlist[1048576] = {0};          // 连接列表，使用文件描述符作为索引
+                                                   // 1048576 = 2^20，支持百万级连接
+struct timeval zvoice_king;                        // 性能测试用的时间戳
 
-int epfd = 0;
-struct conn_item connlist[1048576] = {0}; // 1024  2G     2 * 512 * 1024 * 1024 
-// list
-struct timeval zvoice_king;
-// 
+// 计算两个时间差(毫秒)的宏
 // 1000000
 
 #define TIME_SUB_MS(tv1, tv2)  ((tv1.tv_sec - tv2.tv_sec) * 1000 + (tv1.tv_usec - tv2.tv_usec) / 1000)
@@ -78,11 +78,15 @@ int accept_cb(int fd) {
 
 	struct sockaddr_in clientaddr;
 	socklen_t len = sizeof(clientaddr);
-	
+
 	int clientfd = accept(fd, (struct sockaddr*)&clientaddr, &len);
+	
 	if (clientfd < 0) {
 		return -1;
 	}
+
+	printf("accept clientfd: %d\n", clientfd);
+
 	set_event(clientfd, EPOLLIN, 1);
 
 	connlist[clientfd].fd = clientfd;
@@ -112,9 +116,11 @@ int recv_cb(int fd) { // fd --> EPOLLIN
 	char *buffer = connlist[fd].rbuffer;
 	int idx = connlist[fd].rlen;
 	
+	// buffer+idx: 讲新数据追加在buffer的尾部
+	// BUFFER_LENGTH-idx: 剩余空间大小
 	int count = recv(fd, buffer+idx, BUFFER_LENGTH-idx, 0);
 	if (count == 0) {
-		printf("disconnect\n");
+		printf("clientfd: %d close\n", fd);
 
 		epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);		
 		close(fd);
@@ -123,16 +129,12 @@ int recv_cb(int fd) { // fd --> EPOLLIN
 	}
 	connlist[fd].rlen += count;
 
-#if 1 //echo: need to send
+    printf("socketfd: %d recv count: %d --> buffer: %s\n", fd, count, buffer);
+
 	memcpy(connlist[fd].wbuffer, connlist[fd].rbuffer, connlist[fd].rlen);
 	connlist[fd].wlen = connlist[fd].rlen;
-	connlist[fd].rlen -= connlist[fd].rlen;
-#else
+	connlist[fd].rlen = 0;
 
-	//http_request(&connlist[fd]);
-	//http_response(&connlist[fd]);
-
-#endif
 
 	set_event(fd, EPOLLOUT, 0);
 
@@ -174,7 +176,7 @@ int init_server(unsigned short port) {
 	return sockfd;
 }
 
-// tcp 
+// ip:43.133.211.95
 int main() {
 
 	int port_count = 20;
@@ -206,10 +208,15 @@ int main() {
 			if (events[i].events & EPOLLIN) { //
 
 				int count = connlist[connfd].recv_t.recv_callback(connfd);
+
+				if(count == -1) {
+					continue;
+				}
+
 				//printf("recv count: %d <-- buffer: %s\n", count, connlist[connfd].rbuffer);
 
 			} else if (events[i].events & EPOLLOUT) { 
-				// printf("send --> buffer: %s\n",  connlist[connfd].wbuffer);
+				printf("send --> buffer: %s\n",  connlist[connfd].wbuffer);
 				
 				int count = connlist[connfd].send_callback(connfd);
 			}
